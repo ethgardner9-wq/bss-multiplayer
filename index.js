@@ -1907,6 +1907,7 @@ function BeeSwarmSimulator(DATA){
                 player.addMessage('You planted a '+MATH.doGrammar(type)+' Sprout!',{rare:[130,130,130],epic:[210,170,0],legendary:[0,190,220],supreme:[30,220,90],gummy:[230,70,230],moon:[140,200,230]}[type])
 
                 objects.mobs.push(new Sprout(f,type))
+                if(Multiplayer.isConnected()) Multiplayer.sendSproutSpawn(f,type)
             }
         },
 
@@ -12964,17 +12965,20 @@ function BeeSwarmSimulator(DATA){
 
             this.health-=d|0
 
+            // Broadcast mob damage to other players
+            if(Multiplayer.isConnected()&&this.id) Multiplayer.sendMobDamage(this.id,d|0)
+
             let l=d.toString().length
 
-            textRenderer.add((d|0)+'',[this.pos[0],this.pos[1]+Math.random()*2.75+1.5,this.pos[2]],[255,0,0],crit?superCrit?2:1:0,'',1.25)        
+            textRenderer.add((d|0)+'',[this.pos[0],this.pos[1]+Math.random()*2.75+1.5,this.pos[2]],[255,0,0],crit?superCrit?2:1:0,'',1.25)
         }
-        
+
         update(){
-            
+
             switch(this.state){
-                
+
                 case 'hide':
-                    
+
                     if(TIME-this.checkTimer>0.5){
                         
                         this.checkTimer=TIME+Math.random()*0.2
@@ -21443,6 +21447,31 @@ function BeeSwarmSimulator(DATA){
             chatDiv.appendChild(line)
             chatDiv.scrollTop=chatDiv.scrollHeight
             while(chatDiv.children.length>50) chatDiv.removeChild(chatDiv.firstChild)
+        }
+    })
+    // Receive flower updates from other players
+    Multiplayer.onFlower(function(msg){
+        if(flowers[msg.field]&&flowers[msg.field][msg.z]&&flowers[msg.field][msg.z][msg.x]){
+            updateFlower(msg.field,msg.x,msg.z,function(f){ f.height=msg.h },true,false,false,true)
+        }
+    })
+
+    // Receive mob damage from other players
+    Multiplayer.onMobDmg(function(msg){
+        for(let i in objects.mobs){
+            if(objects.mobs[i].id===msg.mobId){
+                objects.mobs[i].health-=msg.damage
+                textRenderer.add((msg.damage|0)+'',[objects.mobs[i].pos[0],objects.mobs[i].pos[1]+Math.random()*2.75+1.5,objects.mobs[i].pos[2]],[255,150,0],0,'',1)
+                break
+            }
+        }
+    })
+
+    // Receive sprout spawns from other players
+    Multiplayer.onSprout(function(msg){
+        if(msg.field&&msg.sproutType){
+            objects.mobs.push(new Sprout(msg.field,msg.sproutType))
+            player.addMessage('A '+MATH.doGrammar(msg.sproutType)+' Sprout was planted!',[100,255,100])
         }
     })
     // === END MULTIPLAYER SETUP ===
@@ -33024,16 +33053,21 @@ function BeeSwarmSimulator(DATA){
         index.push(vl+2,vl+1,vl,vl+3,vl+2,vl,vl+6,vl+5,vl+2,vl+7,vl+6,vl+2,vl+1,vl+5,vl+4,vl,vl+1,vl+4,vl+3,vl+7,vl+2,vl+4,vl+3,vl,vl+3,vl+4,vl+7,vl+1,vl+2,vl+5)
     }
 
-    function updateFlower(field,x,z,func,updateHeight,updateGoo,updatePollination){
-        
+    function updateFlower(field,x,z,func,updateHeight,updateGoo,updatePollination,fromNetwork){
+
         func(flowers[field][z][x])
-        
+
         flowers[field][z][x].height=MATH.constrain(flowers[field][z][x].height,0,1)
-        
+
         let i=flowers[field][z][x].id*64
 
         UPDATE_FLOWER_MESH=true
-        
+
+        // Broadcast flower change to other players
+        if(updateHeight&&!fromNetwork&&Multiplayer.isConnected()){
+            Multiplayer.sendFlowerUpdate(field,x,z,flowers[field][z][x].height)
+        }
+
         if(updateHeight){
             
             let newHeight=flowers[field][z][x].y+Math.max(flowers[field][z][x].height*0.5,0.05)
@@ -34696,15 +34730,15 @@ function BeeSwarmSimulator(DATA){
         gl.bindTexture(gl.TEXTURE_2D,textures.bees)
         player.hiveMesh.render()
 
-        // === MULTIPLAYER: Render hive names and side hives ===
+        // === MULTIPLAYER: Render hive names and real side hives ===
         if(Multiplayer.isConnected()){
             // Show local player name above their hive
             let hx=player.hivePos[0]+1.5,hy=player.hivePos[1]+3,hz=player.hivePos[2]
             textRenderer.addSingle(document.getElementById('mpPlayerName').value||'You',[hx,hy,hz],[50,255,50],-1.2,false,false,0,0)
-            // Show remote player hives on sides
+            // Show remote player hives on sides with real hive meshes
             let remotePlayers=Multiplayer.getRemotePlayers()
             let slotIndex=0
-            let hiveOffsets=[-6,6,-12,12,-18,18] // X offsets for side hives
+            let hiveOffsets=[-6,6,-12,12,-18,18]
             for(let rid in remotePlayers){
                 let rp=remotePlayers[rid]
                 if(slotIndex>=hiveOffsets.length) break
@@ -34712,24 +34746,34 @@ function BeeSwarmSimulator(DATA){
                 slotIndex++
                 // Name above hive
                 textRenderer.addSingle(rp.name,[hx+ox,hy,hz],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.2,false,false,0,0)
-                // Render hive bee slots as simple colored indicators using dynamic mesh
-                if(rp.hive&&rp.hive.length>0){
-                    let baseX=player.hivePos[0]+ox,baseY=player.hivePos[1]-2.25,baseZ=player.hivePos[2]
-                    for(let si=0;si<rp.hive.length;si++){
-                        let sx=si%5,sy=(si/5)|0
-                        let btype=rp.hive[si].type
-                        if(btype&&beeInfo[btype]){
-                            // Add bee icon at hive position using bee instancing
-                            meshes.bees.instanceData.push(
-                                baseX+sx*0.8,baseY+sy*0.8,baseZ-0.3,0.4,
-                                0,0,1,0,
-                                beeInfo[btype].u,
-                                beeInfo[btype].v+(rp.hive[si].gifted?GIFTED_BEE_TEXTURE_OFFSET:0),
-                                beeInfo[btype].meshPartId||0
-                            )
+                // Build real hive mesh if dirty or not created
+                if(rp.hiveDirty||!rp.hiveMesh){
+                    if(!rp.hiveMesh) rp.hiveMesh=new Mesh(true)
+                    let hiveData=rp.hive||[]
+                    let baseX=player.hivePos[0]+ox,baseY=player.hivePos[1],baseZ=player.hivePos[2]
+                    rp.hiveMesh.setMeshFromFunction(function(box,hiveSlot,u1,u2,u3,giftedRing){
+                        // Hive back board
+                        box(baseX+1.5,baseY-0.5,baseZ-0.6,4.5,0.4,0.4,false,[0.6,0.4,0.15],false)
+                        box(baseX+1.5,baseY+2.5,baseZ-0.6,4.5,0.4,0.4,false,[0.6,0.4,0.15],false)
+                        box(baseX-0.5,baseY+1,baseZ-0.6,0.4,3.5,0.4,false,[0.6,0.4,0.15],false)
+                        box(baseX+3.5,baseY+1,baseZ-0.6,0.4,3.5,0.4,false,[0.6,0.4,0.15],false)
+                        // Back panel
+                        box(baseX+1.5,baseY+1,baseZ-0.7,4,3,0.2,false,[0.8,0.65,0.2],false)
+                        // Bee slots
+                        for(let si=0;si<hiveData.length;si++){
+                            let sx=si%5,sy=(si/5)|0
+                            let btype=hiveData[si].type
+                            hiveSlot(baseX+sx*0.8,baseY+sy*0.8-2.25,baseZ,0.35,0.35,btype,hiveData[si].gifted)
+                            if(btype!==null&&hiveData[si].gifted){
+                                giftedRing(baseX+sx*0.8,baseY+sy*0.8-2.25,baseZ-0.2,0.45,0.45)
+                            }
                         }
-                    }
+                    })
+                    rp.hiveMesh.setBuffers()
+                    rp.hiveDirty=false
                 }
+                // Render with bee texture (already bound)
+                rp.hiveMesh.render()
             }
             // Show "Unclaimed" on empty hive slots
             for(let ui=slotIndex;ui<2;ui++){

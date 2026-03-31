@@ -11,6 +11,9 @@ const Multiplayer = (function() {
     let remotePlayers = {};
     let onChatCallback = null;
     let onStatusCallback = null;
+    let onFlowerCallback = null;
+    let onMobDmgCallback = null;
+    let onSproutCallback = null;
     let sendCounter = 0;
     let gearSendCounter = 0;
     const SEND_RATE = 3; // Position: every 3 frames (~20/sec)
@@ -148,6 +151,15 @@ const Multiplayer = (function() {
                 if (onChatCallback) onChatCallback('<' + msg.name + '> ' + msg.text, [255, 255, 255]);
                 break;
 
+            case 'flower':
+                if (onFlowerCallback) onFlowerCallback(msg);
+                break;
+            case 'mobdmg':
+                if (onMobDmgCallback) onMobDmgCallback(msg);
+                break;
+            case 'sprout':
+                if (onSproutCallback) onSproutCallback(msg);
+                break;
             case 'error':
                 if (onStatusCallback) onStatusCallback('Server: ' + msg.message);
                 break;
@@ -222,9 +234,22 @@ const Multiplayer = (function() {
         if (!connected || !ws || ws.readyState !== 1) return;
         ws.send(JSON.stringify({ type: 'chat', text: text.substring(0, 200) }));
     }
+    function sendFlowerUpdate(field, x, z, newHeight) {
+        if (!connected || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'flower', field, x, z, h: Math.round(newHeight * 1000) / 1000 }));
+    }
+    function sendMobDamage(mobId, damage) {
+        if (!connected || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'mobdmg', mobId, damage }));
+    }
+    function sendSproutSpawn(field, sproutType) {
+        if (!connected || !ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: 'sprout', field, sproutType }));
+    }
 
     return {
         connect, disconnect, sendUpdate, sendHiveData, sendChat, interpolate,
+        sendFlowerUpdate, sendMobDamage, sendSproutSpawn,
         getRemotePlayers: function() { return remotePlayers; },
         isConnected: function() { return connected; },
         getLocalId: function() { return localId; },
@@ -232,5 +257,8 @@ const Multiplayer = (function() {
         getPlayerCount: function() { return Object.keys(remotePlayers).length + (connected ? 1 : 0); },
         onChat: function(cb) { onChatCallback = cb; },
         onStatus: function(cb) { onStatusCallback = cb; },
+        onFlower: function(cb) { onFlowerCallback = cb; },
+        onMobDmg: function(cb) { onMobDmgCallback = cb; },
+        onSprout: function(cb) { onSproutCallback = cb; },
     };
 })();

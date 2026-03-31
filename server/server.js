@@ -78,6 +78,13 @@ wss.on('connection', (ws) => {
         case 'chat':
           broadcast({ type: 'chat', id, name: pd.name, text: (msg.text || '').substring(0, 200) }, null);
           break;
+        case 'flower':
+        case 'mobdmg':
+        case 'sprout':
+          // Relay game state messages to all other players
+          msg.fromId = id;
+          broadcast(msg, id);
+          break;
       }
     } catch (e) {}
   });
