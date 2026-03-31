@@ -114,6 +114,23 @@ function main(){
     
     }
     
+    // Multiplayer connect/disconnect button handlers
+    document.getElementById('mpConnectBtn').onclick=function(){
+        let url=document.getElementById('mpServerUrl').value||'ws://localhost:3000'
+        let name=document.getElementById('mpPlayerName').value||'Player'
+        Multiplayer.connect(url,name)
+        document.getElementById('mpConnectBtn').style.display='none'
+        document.getElementById('mpDisconnectBtn').style.display='inline-block'
+    }
+    document.getElementById('mpDisconnectBtn').onclick=function(){
+        Multiplayer.disconnect()
+        document.getElementById('mpConnectBtn').style.display='inline-block'
+        document.getElementById('mpDisconnectBtn').style.display='none'
+    }
+    Multiplayer.onStatus(function(msg){
+        document.getElementById('mpStatus').textContent=msg
+    })
+
     let addedDivsToSplice=[],ableToImport,printedCode
     
     document.getElementById('mainPlay').onclick=function(){
@@ -21375,6 +21392,34 @@ function BeeSwarmSimulator(DATA){
 
     let shopGearMesh=new Mesh(false)
 
+    // Multiplayer: create a simple mesh for remote players
+    let remotePlayerMesh=new Mesh(false)
+    remotePlayerMesh.setMeshFromFunction(function(box){
+        // Simple player body: torso + head
+        box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
+    })
+    remotePlayerMesh.setBuffers()
+    let remotePlayerMatrix=new Float32Array(16)
+
+    // Multiplayer chat integration
+    let mpChatOpen=false
+    Multiplayer.onChat(function(msg,color){
+        if(typeof player!=='undefined'&&player.addMessage){
+            player.addMessage(msg,color)
+        }
+        // Also add to chat box
+        let chatDiv=document.getElementById('mpChatMessages')
+        if(chatDiv){
+            let line=document.createElement('div')
+            line.style.cssText='color:rgb('+color[0]+','+color[1]+','+color[2]+');font-size:13px;font-family:trebuchet ms;text-shadow:1px 1px 2px rgb(0,0,0);padding:1px 0'
+            line.textContent=msg
+            chatDiv.appendChild(line)
+            chatDiv.scrollTop=chatDiv.scrollHeight
+            // Keep max 50 messages
+            while(chatDiv.children.length>50) chatDiv.removeChild(chatDiv.firstChild)
+        }
+    })
+
     let gear=window.playerGear
 
     gear.tool={
@@ -28917,10 +28962,40 @@ function BeeSwarmSimulator(DATA){
                 }
             }
 
+            // Multiplayer chat: T key opens chat, Enter sends, Escape closes
+            if(key==='t'&&!mpChatOpen&&Multiplayer.isConnected()){
+                mpChatOpen=true
+                let chatInput=document.getElementById('mpChatInput')
+                chatInput.style.display='block'
+                chatInput.focus()
+                if(document.exitPointerLock) document.exitPointerLock()
+                e.preventDefault()
+                return
+            }
+            if(key==='enter'&&mpChatOpen){
+                let chatInput=document.getElementById('mpChatInput')
+                if(chatInput.value.trim()){
+                    Multiplayer.sendChat(chatInput.value.trim())
+                }
+                chatInput.value=''
+                chatInput.style.display='none'
+                mpChatOpen=false
+                return
+            }
+            if(key==='escape'&&mpChatOpen){
+                let chatInput=document.getElementById('mpChatInput')
+                chatInput.value=''
+                chatInput.style.display='none'
+                mpChatOpen=false
+                return
+            }
+            // Block all game input while chat is open
+            if(mpChatOpen) return
+
             if(!out.keys[key])
                 out.clickedKeys[key]=true
             out.keys[key]=true
-            
+
             if(key==='i') inventoryButton.onclick()
             if(key==='q') questButton.onclick()
 
@@ -34066,6 +34141,24 @@ function BeeSwarmSimulator(DATA){
         BEE_COLLECT=Math.sin(TIME*15)*0.25
         BEE_FLY=Math.sin(TIME*35)*0.1
         STATS_TICK=frameCount%10===1
+
+        // === MULTIPLAYER: interpolate remote players and send local state ===
+        if(Multiplayer.isConnected()){
+            Multiplayer.interpolate(dt)
+            Multiplayer.sendUpdate(player.body,player.playerAngle,player.currentGear)
+            // Update HUD
+            let mpHud=document.getElementById('mpHud')
+            if(mpHud.style.display==='none') mpHud.style.display='block'
+            let mpChatBox=document.getElementById('mpChatBox')
+            if(mpChatBox.style.display==='none') mpChatBox.style.display='block'
+            document.getElementById('mpPlayerCount').textContent=Multiplayer.getPlayerCount()+' player'+(Multiplayer.getPlayerCount()!==1?'s':'')
+        } else {
+            let mpHud=document.getElementById('mpHud')
+            if(mpHud.style.display!=='none') mpHud.style.display='none'
+            let mpChatBox=document.getElementById('mpChatBox')
+            if(mpChatBox.style.display!=='none') mpChatBox.style.display='none'
+        }
+        // === END MULTIPLAYER ===
         
         if(STATS_TICK){
 
@@ -34338,6 +34431,37 @@ function BeeSwarmSimulator(DATA){
         
         gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,player.toolMatrix)
         player.toolMesh.render()
+
+        // === MULTIPLAYER: Render remote players ===
+        if(Multiplayer.isConnected()){
+            let remotePlayers=Multiplayer.getRemotePlayers()
+            for(let rid in remotePlayers){
+                let rp=remotePlayers[rid]
+                // Build model matrix from position and yaw
+                let cy=Math.cos(rp.yaw),sy=Math.sin(rp.yaw)
+                remotePlayerMatrix[0]=cy
+                remotePlayerMatrix[1]=0
+                remotePlayerMatrix[2]=-sy
+                remotePlayerMatrix[3]=0
+                remotePlayerMatrix[4]=0
+                remotePlayerMatrix[5]=1
+                remotePlayerMatrix[6]=0
+                remotePlayerMatrix[7]=0
+                remotePlayerMatrix[8]=sy
+                remotePlayerMatrix[9]=0
+                remotePlayerMatrix[10]=cy
+                remotePlayerMatrix[11]=0
+                remotePlayerMatrix[12]=rp.x
+                remotePlayerMatrix[13]=rp.y
+                remotePlayerMatrix[14]=rp.z
+                remotePlayerMatrix[15]=1
+                gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,remotePlayerMatrix)
+                remotePlayerMesh.render()
+                // Add name tag above remote player
+                textRenderer.addSingle(rp.name,[rp.x,rp.y+2.2,rp.z],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.5,false,false,0,0)
+            }
+        }
+        // === END MULTIPLAYER ===
 
         if(player.activeStickbug)
             player.activeStickbug.update()

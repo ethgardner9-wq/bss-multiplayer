@@ -1,0 +1,15 @@
+{
+  "name": "bss-multiplayer-server",
+  "version": "1.0.0",
+  "description": "Multiplayer server for Bee Swarm Simulator HTML remake",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}
