@@ -4740,7 +4740,14 @@
 
 <div id='passiveActivationPopup' style='display:none;position:fixed;z-index:0;pointer-events:none;'></div>
 
-<div id='mpHud' style='position:fixed;top:8px;right:8px;z-index:1;display:none'>
+<div id='codeRedeemBox' style='position:fixed;top:8px;right:8px;z-index:2;display:none'>
+    <div style='background-color:rgb(0,0,0,0.6);border-radius:8px;padding:6px 10px;display:flex;gap:4px;align-items:center'>
+        <input id='codeInput' placeholder='Enter Code...' style='width:120px;height:24px;font-size:12px;padding:2px 6px;border:none;border-radius:4px;font-family:trebuchet ms;background-color:rgb(255,255,255,0.9)'>
+        <button id='codeRedeemBtn' style='width:60px;height:28px;font-size:12px;background-color:rgb(100,220,100);border:none;border-radius:4px;cursor:pointer;font-family:trebuchet ms'>Redeem</button>
+    </div>
+</div>
+
+<div id='mpHud' style='position:fixed;top:44px;right:8px;z-index:1;display:none'>
     <div id='mpPlayerCount' style='background-color:rgb(0,0,0,0.5);color:rgb(255,255,255);font-size:13px;padding:4px 10px;border-radius:6px;text-align:right;font-family:trebuchet ms'></div>
 </div>
 
