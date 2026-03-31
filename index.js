@@ -3127,17 +3127,11 @@ function BeeSwarmSimulator(DATA){
         },
         
         gummy:{
-
+            
             u:128*13/2048,v:0,meshPartId:0,gatherSpeed:4,gatherAmount:10,speed:14,convertSpeed:4,convertAmount:700,tokens:['gummyBlob','gummyBarrage','whiteBoost'],attack:3,energy:50,rarity:'event',color:'white',description:"A squishy bee who's sweet as sugar. Covers flowers in goo to grant you bonus honey!",giftedHiveBonus:{oper:'*',stat:'honeyPerPollen',num:1.05}
-
+            
         },
-
-        bobo:{
-
-            u:0,v:256*3/2048,meshPartId:0,gatherSpeed:4,gatherAmount:10,speed:14,convertSpeed:4,convertAmount:700,tokens:['gummyBlob','gummyBarrage','whiteBoost'],attack:3,energy:50,rarity:'event',color:'white',description:"An adorable lamb bee named Bobo! Soft, fluffy, and surprisingly good at making honey. Covers flowers in goo just like Gummy Bee!",giftedHiveBonus:{oper:'*',stat:'honeyPerPollen',num:1.05}
-
-        },
-
+        
         precise:{
             
             u:128*14/2048,v:0,meshPartId:1,gatherSpeed:4,gatherAmount:20,speed:11.2,convertSpeed:4,convertAmount:130,tokens:['targetPractice','redBomb_'],attack:8,energy:40,attackTokens:['targetPractice'],favoriteTreat:'sunflowerSeed',rarity:'mythic',color:'red',description:'This sharpshooting bee is always on point and expects the same of you.',giftedHiveBonus:{oper:'+',stat:'superCritChance',num:0.05},trails:[{length:4,size:0.25,triangle:true,color:[219/255,72/255,92/255,1],skipFrame:5,skipAdd:5}]
@@ -9659,29 +9653,11 @@ function BeeSwarmSimulator(DATA){
                 player.updateHive()
             }
         },
-
-        boboBeeEgg:{
-
-            canUseOnSlot:()=>true,
-            amount:0,u:0,v:256*3/2048,value:500,
-            use:function(){
-                items.boboBeeEgg.amount--
-                player.hive[player.hiveIndex[1]][player.hiveIndex[0]].type='bobo'
-                player.hive[player.hiveIndex[1]][player.hiveIndex[0]].gifted=Math.random()<1/25
-                player.hive[player.hiveIndex[1]][player.hiveIndex[0]].bond=0
-
-                for(let i in player.currentGear.beequips) if(player.hive[player.hiveIndex[1]][player.hiveIndex[0]].beequip&&player.hive[player.hiveIndex[1]][player.hiveIndex[0]].beequip.id===player.currentGear.beequips[i].id) player.currentGear.beequips[i].bee=undefined
-                player.hive[player.hiveIndex[1]][player.hiveIndex[0]].beequip=undefined
-
-                player.beePopup={type:'bobo',message:'You hatched a...',time:TIME,gifted:player.hive[player.hiveIndex[1]][player.hiveIndex[0]].gifted}
-                player.updateHive()
-            }
-        },
-
+        
         royalJelly:{
-
+            
             canUseOnSlot:(slot)=>{
-
+                
                 return slot.type
             },
             amount:0,u:128*3/2048,v:128*8/2048,value:10,
@@ -21416,33 +21392,17 @@ function BeeSwarmSimulator(DATA){
 
     let shopGearMesh=new Mesh(false)
 
-    // Multiplayer: remote player rendering with full gear
+    // Multiplayer: create a simple mesh for remote players
+    let remotePlayerMesh=new Mesh(false)
+    remotePlayerMesh.setMeshFromFunction(function(box){
+        // Simple player body: torso + head
+        box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
+    })
+    remotePlayerMesh.setBuffers()
     let remotePlayerMatrix=new Float32Array(16)
-    let mpChatOpen=false
 
-    function buildRemoteAvatar(rp){
-        if(!rp.bodyMesh) rp.bodyMesh=new Mesh(false)
-        if(!rp.toolMesh) rp.toolMesh=new Mesh(false)
-        let g=rp.currentGear||{}
-        let gearDefs=window.playerGear
-        rp.bodyMesh.setMeshFromFunction(function(box,a,cylinder,sphere,applyFinalRotation,c,star){
-            box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
-            try{
-                if(g.boots&&g.boots!=='none'&&gearDefs.boots&&gearDefs.boots[g.boots]) gearDefs.boots[g.boots].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.belt&&g.belt!=='none'&&gearDefs.belt&&gearDefs.belt[g.belt]) gearDefs.belt[g.belt].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.backpack&&g.backpack!=='pouch'&&g.backpack!=='none'&&gearDefs.backpack&&gearDefs.backpack[g.backpack]) gearDefs.backpack[g.backpack].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.mask&&g.mask!=='none'&&gearDefs.mask&&gearDefs.mask[g.mask]) gearDefs.mask[g.mask].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.leftGuard&&g.leftGuard!=='none'&&gearDefs.leftGuard&&gearDefs.leftGuard[g.leftGuard]) gearDefs.leftGuard[g.leftGuard].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.rightGuard&&g.rightGuard!=='none'&&gearDefs.rightGuard&&gearDefs.rightGuard[g.rightGuard]) gearDefs.rightGuard[g.rightGuard].mesh(box,cylinder,sphere,star,applyFinalRotation)
-            }catch(e){}
-        })
-        rp.bodyMesh.setBuffers()
-        rp.toolMesh.setMeshFromFunction(function(box,a,cylinder,sphere,applyFinalRotation,c,star){
-            try{ if(g.tool&&gearDefs.tool&&gearDefs.tool[g.tool]) gearDefs.tool[g.tool].mesh(box,cylinder,sphere,star,applyFinalRotation) }catch(e){}
-        })
-        rp.toolMesh.setBuffers()
-        rp.gearDirty=false
-    }
+    // Multiplayer chat integration
+    let mpChatOpen=false
     Multiplayer.onChat(function(msg,color){
         if(typeof player!=='undefined'&&player.addMessage){
             player.addMessage(msg,color)
@@ -34472,32 +34432,32 @@ function BeeSwarmSimulator(DATA){
         gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,player.toolMatrix)
         player.toolMesh.render()
 
-        // === MULTIPLAYER: Render remote players with full gear ===
+        // === MULTIPLAYER: Render remote players ===
         if(Multiplayer.isConnected()){
             let remotePlayers=Multiplayer.getRemotePlayers()
             for(let rid in remotePlayers){
                 let rp=remotePlayers[rid]
-                if(rp.gearDirty) buildRemoteAvatar(rp)
-                if(!rp.bodyMesh) continue
+                // Build model matrix from position and yaw
                 let cy=Math.cos(rp.yaw),sy=Math.sin(rp.yaw)
-                remotePlayerMatrix[0]=cy;remotePlayerMatrix[1]=0;remotePlayerMatrix[2]=-sy;remotePlayerMatrix[3]=0
-                remotePlayerMatrix[4]=0;remotePlayerMatrix[5]=1;remotePlayerMatrix[6]=0;remotePlayerMatrix[7]=0
-                remotePlayerMatrix[8]=sy;remotePlayerMatrix[9]=0;remotePlayerMatrix[10]=cy;remotePlayerMatrix[11]=0
-                remotePlayerMatrix[12]=rp.x;remotePlayerMatrix[13]=rp.y;remotePlayerMatrix[14]=rp.z;remotePlayerMatrix[15]=1
+                remotePlayerMatrix[0]=cy
+                remotePlayerMatrix[1]=0
+                remotePlayerMatrix[2]=-sy
+                remotePlayerMatrix[3]=0
+                remotePlayerMatrix[4]=0
+                remotePlayerMatrix[5]=1
+                remotePlayerMatrix[6]=0
+                remotePlayerMatrix[7]=0
+                remotePlayerMatrix[8]=sy
+                remotePlayerMatrix[9]=0
+                remotePlayerMatrix[10]=cy
+                remotePlayerMatrix[11]=0
+                remotePlayerMatrix[12]=rp.x
+                remotePlayerMatrix[13]=rp.y
+                remotePlayerMatrix[14]=rp.z
+                remotePlayerMatrix[15]=1
                 gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,remotePlayerMatrix)
-                rp.bodyMesh.render()
-                if(rp.toolMesh){
-                    let toolMat=remotePlayerMatrix.slice()
-                    let swingAngle=Math.max(0,(-Math.abs(rp.toolRot-2)+2)*MATH.QUATER_PI)
-                    if(swingAngle>0){
-                        let cs=Math.cos(swingAngle),ss=Math.sin(swingAngle)
-                        let m4=toolMat[4],m5=toolMat[5],m6=toolMat[6]
-                        toolMat[4]=m4*cs+toolMat[8]*ss;toolMat[5]=m5*cs+toolMat[9]*ss;toolMat[6]=m6*cs+toolMat[10]*ss
-                        toolMat[8]=-m4*ss+toolMat[8]*cs;toolMat[9]=-m5*ss+toolMat[9]*cs;toolMat[10]=-m6*ss+toolMat[10]*cs
-                    }
-                    gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,toolMat)
-                    rp.toolMesh.render()
-                }
+                remotePlayerMesh.render()
+                // Add name tag above remote player
                 textRenderer.addSingle(rp.name,[rp.x,rp.y+2.2,rp.z],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.5,false,false,0,0)
             }
         }
@@ -34912,31 +34872,6 @@ function BeeSwarmSimulator(DATA){
     }
 
     loop(0)
-
-    // Code redemption system
-    let redeemedCodes=player.extraInfo.redeemedCodes||{}
-    document.getElementById('codeRedeemBox').style.display='block'
-    document.getElementById('codeRedeemBtn').onclick=function(){
-        let code=document.getElementById('codeInput').value.trim().toUpperCase()
-        document.getElementById('codeInput').value=''
-        if(!code) return
-        if(redeemedCodes[code]){
-            player.addMessage('You already redeemed this code!',[255,50,50])
-            return
-        }
-        switch(code){
-            case 'BOBO':
-                items.boboBeeEgg.amount++
-                player.updateInventory()
-                player.addMessage('+1 Bobo Bee Egg!',[255,200,50])
-                redeemedCodes[code]=true
-                player.extraInfo.redeemedCodes=redeemedCodes
-                break
-            default:
-                player.addMessage('Invalid code!',[255,50,50])
-                break
-        }
-    }
 
     window.exposeCheats=()=>{
         window.player=player
