@@ -13,8 +13,8 @@ const httpServer = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-httpServer.listen(PORT, () => {
-  console.log(`HTTP + WebSocket server listening on port ${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`HTTP + WebSocket server listening on 0.0.0.0:${PORT}`);
 });
 
 const players = new Map();
