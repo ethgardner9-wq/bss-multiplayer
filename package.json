@@ -5,7 +5,7 @@
     "start": "node server/server.js"
   },
   "dependencies": {
-    "ws": "^8.16.0"
+    "ws": "^8.20.0"
   },
   "engines": {
     "node": ">=18.0.0"
