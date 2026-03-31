@@ -24226,13 +24226,6 @@ function BeeSwarmSimulator(DATA){
         out.hive=[[]]
         out.hivePos=[-1.625+9,1.5,-7.5]
 
-        // Multiplayer: offset hive position based on assigned slot
-        if(Multiplayer.isConnected()&&Multiplayer.getLocalId()){
-            let mpHiveOffsets=[0,-6,6,-12,12,-18,18]
-            let mySlot=(Multiplayer.getLocalId()-1)%mpHiveOffsets.length
-            out.hivePos[0]+=mpHiveOffsets[mySlot]
-        }
-
         let ht=triggers.hive={
             
             minX:out.hivePos[0]-1,
@@ -34551,23 +34544,6 @@ function BeeSwarmSimulator(DATA){
                 }
                 // Name tag above player
                 textRenderer.addSingle(rp.name,[rp.x,rp.y+2.2,rp.z],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.5,false,false,0,0)
-                // Add remote player's bees to bee instance data
-                if(rp.bees&&rp.bees.length>0){
-                    for(let bi=0;bi<rp.bees.length;bi++){
-                        let bee=rp.bees[bi]
-                        let bx=rp.x+(bee.rx||0),by=rp.y+(bee.ry||0),bz=rp.z+(bee.rz||0)
-                        let btype=bee.type||'basic'
-                        if(beeInfo[btype]){
-                            meshes.bees.instanceData.push(
-                                bx,by,bz,bee.type==='baby'||bee.type==='tadpole'?0.65:1,
-                                0,0,-1,BEE_FLY,
-                                beeInfo[btype].u,
-                                beeInfo[btype].v+(bee.gifted?GIFTED_BEE_TEXTURE_OFFSET:0),
-                                beeInfo[btype].meshPartId||0
-                            )
-                        }
-                    }
-                }
             }
         }
         // === END MULTIPLAYER ===
@@ -34737,67 +34713,7 @@ function BeeSwarmSimulator(DATA){
         gl.bindTexture(gl.TEXTURE_2D,textures.bees)
         player.hiveMesh.render()
 
-        // === MULTIPLAYER: Render player hives along the wall ===
-        if(Multiplayer.isConnected()){
-            // Hive positions: center (local), then left/right offsets along the mountain wall
-            let hiveBaseX=player.hivePos[0],hiveBaseY=player.hivePos[1],hiveBaseZ=player.hivePos[2]
-            let hiveOffsets=[0,-6,6,-12,12,-18,18] // Slot 0=center(local), 1-6=remote
-            let localSlot=Multiplayer.getLocalId()?(Multiplayer.getLocalId()-1)%hiveOffsets.length:0
-            // Show local player name above their assigned hive
-            let localOx=hiveOffsets[localSlot]
-            textRenderer.addSingle(document.getElementById('mpPlayerName').value||'You',[hiveBaseX+1.5+localOx,hiveBaseY+3,hiveBaseZ],[50,255,50],-1.2,false,false,0,0)
-            // Remote players get the other slots
-            let remotePlayers=Multiplayer.getRemotePlayers()
-            let usedSlots={};usedSlots[localSlot]=true
-            for(let rid in remotePlayers){
-                let rp=remotePlayers[rid]
-                // Assign a slot based on their ID
-                let slot=(rp.id-1)%hiveOffsets.length
-                while(usedSlots[slot]) slot=(slot+1)%hiveOffsets.length
-                usedSlots[slot]=true
-                let ox=hiveOffsets[slot]
-                let bx=hiveBaseX+ox,by=hiveBaseY,bz=hiveBaseZ
-                // Name above hive
-                textRenderer.addSingle(rp.name,[bx+1.5,by+3,bz],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.2,false,false,0,0)
-                // Build real hive mesh matching local player's hive style
-                if(rp.hiveDirty||!rp.hiveMesh){
-                    if(!rp.hiveMesh) rp.hiveMesh=new Mesh(true)
-                    let hiveData=rp.hive||[]
-                    rp.hiveMesh.setMeshFromFunction(function(box,hiveSlot,u1,u2,u3,giftedRing){
-                        // Orange hive frame (same style as local player hive)
-                        // Back panel
-                        box(bx+1.5,by+0.5,bz-0.5,4.5,5,0.3,false,[0.6,0.4,0.1],false)
-                        // Floor (white platform)
-                        box(bx+1.5,by-2.5,bz+0.5,4.5,0.15,2,false,[0.5,0.5,0.5],false,true)
-                        // Frame edges
-                        box(bx-0.5,by+0.5,bz-0.3,0.3,5,0.5,false,[0.5,0.3,0.08],false)
-                        box(bx+3.5,by+0.5,bz-0.3,0.3,5,0.5,false,[0.5,0.3,0.08],false)
-                        box(bx+1.5,by+3.1,bz-0.3,4.5,0.3,0.5,false,[0.5,0.3,0.08],false)
-                        box(bx+1.5,by-2.1,bz-0.3,4.5,0.3,0.5,false,[0.5,0.3,0.08],false)
-                        // Bee hexagon slots (same as local hive)
-                        for(let si=0;si<hiveData.length;si++){
-                            let sx=si%5,sy=(si/5)|0
-                            let btype=hiveData[si].type
-                            hiveSlot(bx+sx*0.8,by+sy*0.8-2.25,bz,0.35,0.35,btype,hiveData[si].gifted)
-                            if(btype!==null&&hiveData[si].gifted){
-                                giftedRing(bx+sx*0.8,by+sy*0.8-2.25,bz-0.2,0.45,0.45)
-                            }
-                        }
-                    })
-                    rp.hiveMesh.setBuffers()
-                    rp.hiveDirty=false
-                }
-                rp.hiveMesh.render()
-            }
-            // Show "Unclaimed" on remaining visible slots
-            for(let ui=0;ui<Math.min(3,hiveOffsets.length);ui++){
-                if(!usedSlots[ui]){
-                    let ox=hiveOffsets[ui]
-                    textRenderer.addSingle('Unclaimed',[hiveBaseX+1.5+ox,hiveBaseY+3,hiveBaseZ],[150,150,150],-1,false,false,0,0)
-                }
-            }
-        }
-        // === END MULTIPLAYER HIVES ===
+        // === END MULTIPLAYER HIVES (removed) ===
 
         player.updateFields()
         
