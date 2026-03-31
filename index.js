@@ -21392,22 +21392,49 @@ function BeeSwarmSimulator(DATA){
 
     let shopGearMesh=new Mesh(false)
 
-    // Multiplayer: create a simple mesh for remote players
-    let remotePlayerMesh=new Mesh(false)
-    remotePlayerMesh.setMeshFromFunction(function(box){
-        // Simple player body: torso + head
-        box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
-    })
-    remotePlayerMesh.setBuffers()
+    // === MULTIPLAYER: Remote player rendering system ===
     let remotePlayerMatrix=new Float32Array(16)
-
-    // Multiplayer chat integration
     let mpChatOpen=false
+    let mpHiveSendTimer=0
+
+    // Build a full avatar mesh for a remote player using their gear data
+    function buildRemoteAvatar(rp){
+        if(!rp.bodyMesh) rp.bodyMesh=new Mesh(false)
+        if(!rp.toolMesh) rp.toolMesh=new Mesh(false)
+        let g=rp.currentGear
+        let gearDefs=window.playerGear
+        // Build body mesh with gear
+        rp.bodyMesh.setMeshFromFunction(function(box,a,cylinder,sphere,applyFinalRotation,c,star){
+            box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
+            try{
+                if(g.boots&&g.boots!=='none'&&gearDefs.boots&&gearDefs.boots[g.boots])
+                    gearDefs.boots[g.boots].mesh(box,cylinder,sphere,star,applyFinalRotation)
+                if(g.belt&&g.belt!=='none'&&gearDefs.belt&&gearDefs.belt[g.belt])
+                    gearDefs.belt[g.belt].mesh(box,cylinder,sphere,star,applyFinalRotation)
+                if(g.backpack&&g.backpack!=='pouch'&&g.backpack!=='none'&&gearDefs.backpack&&gearDefs.backpack[g.backpack])
+                    gearDefs.backpack[g.backpack].mesh(box,cylinder,sphere,star,applyFinalRotation)
+                if(g.mask&&g.mask!=='none'&&gearDefs.mask&&gearDefs.mask[g.mask])
+                    gearDefs.mask[g.mask].mesh(box,cylinder,sphere,star,applyFinalRotation)
+                if(g.leftGuard&&g.leftGuard!=='none'&&gearDefs.leftGuard&&gearDefs.leftGuard[g.leftGuard])
+                    gearDefs.leftGuard[g.leftGuard].mesh(box,cylinder,sphere,star,applyFinalRotation)
+                if(g.rightGuard&&g.rightGuard!=='none'&&gearDefs.rightGuard&&gearDefs.rightGuard[g.rightGuard])
+                    gearDefs.rightGuard[g.rightGuard].mesh(box,cylinder,sphere,star,applyFinalRotation)
+            }catch(e){}
+        })
+        rp.bodyMesh.setBuffers()
+        // Build tool mesh
+        rp.toolMesh.setMeshFromFunction(function(box,a,cylinder,sphere,applyFinalRotation,c,star){
+            try{
+                if(g.tool&&gearDefs.tool&&gearDefs.tool[g.tool])
+                    gearDefs.tool[g.tool].mesh(box,cylinder,sphere,star,applyFinalRotation)
+            }catch(e){}
+        })
+        rp.toolMesh.setBuffers()
+        rp.gearDirty=false
+    }
+
     Multiplayer.onChat(function(msg,color){
-        if(typeof player!=='undefined'&&player.addMessage){
-            player.addMessage(msg,color)
-        }
-        // Also add to chat box
+        if(typeof player!=='undefined'&&player.addMessage) player.addMessage(msg,color)
         let chatDiv=document.getElementById('mpChatMessages')
         if(chatDiv){
             let line=document.createElement('div')
@@ -21415,10 +21442,10 @@ function BeeSwarmSimulator(DATA){
             line.textContent=msg
             chatDiv.appendChild(line)
             chatDiv.scrollTop=chatDiv.scrollHeight
-            // Keep max 50 messages
             while(chatDiv.children.length>50) chatDiv.removeChild(chatDiv.firstChild)
         }
     })
+    // === END MULTIPLAYER SETUP ===
 
     let gear=window.playerGear
 
@@ -34142,10 +34169,25 @@ function BeeSwarmSimulator(DATA){
         BEE_FLY=Math.sin(TIME*35)*0.1
         STATS_TICK=frameCount%10===1
 
-        // === MULTIPLAYER: interpolate remote players and send local state ===
+        // === MULTIPLAYER: interpolate, send state, sync hive/bees ===
         if(Multiplayer.isConnected()){
             Multiplayer.interpolate(dt)
-            Multiplayer.sendUpdate(player.body,player.playerAngle,player.currentGear)
+            Multiplayer.sendUpdate(player.body,player.playerAngle,player.currentGear,player.toolRot>0&&player.toolRot<4)
+            // Send hive/bee data every ~5 seconds
+            mpHiveSendTimer+=dt
+            if(mpHiveSendTimer>5){
+                mpHiveSendTimer=0
+                let hiveData=[]
+                for(let y in player.hive)for(let x in player.hive[y]){
+                    hiveData.push({type:player.hive[y][x].type,gifted:player.hive[y][x].gifted})
+                }
+                let beeData=[]
+                for(let i in objects.bees){
+                    let b=objects.bees[i]
+                    beeData.push({type:b.type,gifted:b.gifted,rx:Math.round((b.pos[0]-player.body.position.x)*10)/10,ry:Math.round((b.pos[1]-player.body.position.y)*10)/10,rz:Math.round((b.pos[2]-player.body.position.z)*10)/10})
+                }
+                Multiplayer.sendHiveData(hiveData,beeData)
+            }
             // Update HUD
             let mpHud=document.getElementById('mpHud')
             if(mpHud.style.display==='none') mpHud.style.display='block'
@@ -34432,33 +34474,59 @@ function BeeSwarmSimulator(DATA){
         gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,player.toolMatrix)
         player.toolMesh.render()
 
-        // === MULTIPLAYER: Render remote players ===
+        // === MULTIPLAYER: Render remote players with full avatars, tools, bees ===
         if(Multiplayer.isConnected()){
             let remotePlayers=Multiplayer.getRemotePlayers()
             for(let rid in remotePlayers){
                 let rp=remotePlayers[rid]
+                // Rebuild mesh if gear changed
+                if(rp.gearDirty) buildRemoteAvatar(rp)
+                if(!rp.bodyMesh) continue
                 // Build model matrix from position and yaw
                 let cy=Math.cos(rp.yaw),sy=Math.sin(rp.yaw)
-                remotePlayerMatrix[0]=cy
-                remotePlayerMatrix[1]=0
-                remotePlayerMatrix[2]=-sy
-                remotePlayerMatrix[3]=0
-                remotePlayerMatrix[4]=0
-                remotePlayerMatrix[5]=1
-                remotePlayerMatrix[6]=0
-                remotePlayerMatrix[7]=0
-                remotePlayerMatrix[8]=sy
-                remotePlayerMatrix[9]=0
-                remotePlayerMatrix[10]=cy
-                remotePlayerMatrix[11]=0
-                remotePlayerMatrix[12]=rp.x
-                remotePlayerMatrix[13]=rp.y
-                remotePlayerMatrix[14]=rp.z
-                remotePlayerMatrix[15]=1
+                remotePlayerMatrix[0]=cy;remotePlayerMatrix[1]=0;remotePlayerMatrix[2]=-sy;remotePlayerMatrix[3]=0
+                remotePlayerMatrix[4]=0;remotePlayerMatrix[5]=1;remotePlayerMatrix[6]=0;remotePlayerMatrix[7]=0
+                remotePlayerMatrix[8]=sy;remotePlayerMatrix[9]=0;remotePlayerMatrix[10]=cy;remotePlayerMatrix[11]=0
+                remotePlayerMatrix[12]=rp.x;remotePlayerMatrix[13]=rp.y;remotePlayerMatrix[14]=rp.z;remotePlayerMatrix[15]=1
+                // Render body
                 gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,remotePlayerMatrix)
-                remotePlayerMesh.render()
-                // Add name tag above remote player
+                rp.bodyMesh.render()
+                // Render tool with swing animation
+                if(rp.toolMesh){
+                    let toolMat=remotePlayerMatrix.slice()
+                    let swingAngle=Math.max(0,(-Math.abs(rp.toolRot-2)+2)*MATH.QUATER_PI)
+                    if(swingAngle>0){
+                        let cs=Math.cos(swingAngle),ss=Math.sin(swingAngle)
+                        let m4=toolMat[4],m5=toolMat[5],m6=toolMat[6]
+                        toolMat[4]=m4*cs+toolMat[8]*ss
+                        toolMat[5]=m5*cs+toolMat[9]*ss
+                        toolMat[6]=m6*cs+toolMat[10]*ss
+                        toolMat[8]=-m4*ss+toolMat[8]*cs
+                        toolMat[9]=-m5*ss+toolMat[9]*cs
+                        toolMat[10]=-m6*ss+toolMat[10]*cs
+                    }
+                    gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,toolMat)
+                    rp.toolMesh.render()
+                }
+                // Name tag above player
                 textRenderer.addSingle(rp.name,[rp.x,rp.y+2.2,rp.z],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.5,false,false,0,0)
+                // Add remote player's bees to bee instance data
+                if(rp.bees&&rp.bees.length>0){
+                    for(let bi=0;bi<rp.bees.length;bi++){
+                        let bee=rp.bees[bi]
+                        let bx=rp.x+(bee.rx||0),by=rp.y+(bee.ry||0),bz=rp.z+(bee.rz||0)
+                        let btype=bee.type||'basic'
+                        if(beeInfo[btype]){
+                            meshes.bees.instanceData.push(
+                                bx,by,bz,bee.type==='baby'||bee.type==='tadpole'?0.65:1,
+                                0,0,-1,BEE_FLY,
+                                beeInfo[btype].u,
+                                beeInfo[btype].v+(bee.gifted?GIFTED_BEE_TEXTURE_OFFSET:0),
+                                beeInfo[btype].meshPartId||0
+                            )
+                        }
+                    }
+                }
             }
         }
         // === END MULTIPLAYER ===
@@ -34627,7 +34695,50 @@ function BeeSwarmSimulator(DATA){
         
         gl.bindTexture(gl.TEXTURE_2D,textures.bees)
         player.hiveMesh.render()
-        
+
+        // === MULTIPLAYER: Render hive names and side hives ===
+        if(Multiplayer.isConnected()){
+            // Show local player name above their hive
+            let hx=player.hivePos[0]+1.5,hy=player.hivePos[1]+3,hz=player.hivePos[2]
+            textRenderer.addSingle(document.getElementById('mpPlayerName').value||'You',[hx,hy,hz],[50,255,50],-1.2,false,false,0,0)
+            // Show remote player hives on sides
+            let remotePlayers=Multiplayer.getRemotePlayers()
+            let slotIndex=0
+            let hiveOffsets=[-6,6,-12,12,-18,18] // X offsets for side hives
+            for(let rid in remotePlayers){
+                let rp=remotePlayers[rid]
+                if(slotIndex>=hiveOffsets.length) break
+                let ox=hiveOffsets[slotIndex]
+                slotIndex++
+                // Name above hive
+                textRenderer.addSingle(rp.name,[hx+ox,hy,hz],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.2,false,false,0,0)
+                // Render hive bee slots as simple colored indicators using dynamic mesh
+                if(rp.hive&&rp.hive.length>0){
+                    let baseX=player.hivePos[0]+ox,baseY=player.hivePos[1]-2.25,baseZ=player.hivePos[2]
+                    for(let si=0;si<rp.hive.length;si++){
+                        let sx=si%5,sy=(si/5)|0
+                        let btype=rp.hive[si].type
+                        if(btype&&beeInfo[btype]){
+                            // Add bee icon at hive position using bee instancing
+                            meshes.bees.instanceData.push(
+                                baseX+sx*0.8,baseY+sy*0.8,baseZ-0.3,0.4,
+                                0,0,1,0,
+                                beeInfo[btype].u,
+                                beeInfo[btype].v+(rp.hive[si].gifted?GIFTED_BEE_TEXTURE_OFFSET:0),
+                                beeInfo[btype].meshPartId||0
+                            )
+                        }
+                    }
+                }
+            }
+            // Show "Unclaimed" on empty hive slots
+            for(let ui=slotIndex;ui<2;ui++){
+                let ox=hiveOffsets[ui]
+                textRenderer.addSingle('Unclaimed',[hx+ox,hy,hz],[150,150,150],-1,false,false,0,0)
+            }
+        }
+        // === END MULTIPLAYER HIVES ===
+
         player.updateFields()
         
         gl.useProgram(beeGeometryProgram)
