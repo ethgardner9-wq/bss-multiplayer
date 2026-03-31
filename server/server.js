@@ -1,10 +1,21 @@
 const { WebSocketServer } = require('ws');
+const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 const MAX_PLAYERS = 20;
 const BROADCAST_RATE = 50; // ms between broadcasts (20 Hz)
 
-const wss = new WebSocketServer({ port: PORT });
+// Create HTTP server that handles health checks and upgrades to WebSocket
+const httpServer = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+  res.end('BSS Multiplayer Server OK');
+});
+
+const wss = new WebSocketServer({ server: httpServer });
+
+httpServer.listen(PORT, () => {
+  console.log(`HTTP + WebSocket server listening on port ${PORT}`);
+});
 
 const players = new Map();
 let nextId = 1;
@@ -184,5 +195,4 @@ setInterval(() => {
   }
 }, BROADCAST_RATE);
 
-console.log(`BSS Multiplayer Server running on ws://localhost:${PORT}`);
 console.log(`Max players: ${MAX_PLAYERS}`);
