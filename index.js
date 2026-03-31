@@ -1907,7 +1907,6 @@ function BeeSwarmSimulator(DATA){
                 player.addMessage('You planted a '+MATH.doGrammar(type)+' Sprout!',{rare:[130,130,130],epic:[210,170,0],legendary:[0,190,220],supreme:[30,220,90],gummy:[230,70,230],moon:[140,200,230]}[type])
 
                 objects.mobs.push(new Sprout(f,type))
-                if(Multiplayer.isConnected()) Multiplayer.sendSproutSpawn(f,type)
             }
         },
 
@@ -12965,20 +12964,17 @@ function BeeSwarmSimulator(DATA){
 
             this.health-=d|0
 
-            // Broadcast mob damage to other players
-            if(Multiplayer.isConnected()&&this.id) Multiplayer.sendMobDamage(this.id,d|0)
-
             let l=d.toString().length
 
-            textRenderer.add((d|0)+'',[this.pos[0],this.pos[1]+Math.random()*2.75+1.5,this.pos[2]],[255,0,0],crit?superCrit?2:1:0,'',1.25)
+            textRenderer.add((d|0)+'',[this.pos[0],this.pos[1]+Math.random()*2.75+1.5,this.pos[2]],[255,0,0],crit?superCrit?2:1:0,'',1.25)        
         }
-
+        
         update(){
-
+            
             switch(this.state){
-
+                
                 case 'hide':
-
+                    
                     if(TIME-this.checkTimer>0.5){
                         
                         this.checkTimer=TIME+Math.random()*0.2
@@ -21396,49 +21392,22 @@ function BeeSwarmSimulator(DATA){
 
     let shopGearMesh=new Mesh(false)
 
-    // === MULTIPLAYER: Remote player rendering system ===
+    // Multiplayer: create a simple mesh for remote players
+    let remotePlayerMesh=new Mesh(false)
+    remotePlayerMesh.setMeshFromFunction(function(box){
+        // Simple player body: torso + head
+        box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
+    })
+    remotePlayerMesh.setBuffers()
     let remotePlayerMatrix=new Float32Array(16)
+
+    // Multiplayer chat integration
     let mpChatOpen=false
-    let mpHiveSendTimer=0
-
-    // Build a full avatar mesh for a remote player using their gear data
-    function buildRemoteAvatar(rp){
-        if(!rp.bodyMesh) rp.bodyMesh=new Mesh(false)
-        if(!rp.toolMesh) rp.toolMesh=new Mesh(false)
-        let g=rp.currentGear
-        let gearDefs=window.playerGear
-        // Build body mesh with gear
-        rp.bodyMesh.setMeshFromFunction(function(box,a,cylinder,sphere,applyFinalRotation,c,star){
-            box(0,0,0,0.5,1,0.5,false,[1.45,1.45,1])
-            try{
-                if(g.boots&&g.boots!=='none'&&gearDefs.boots&&gearDefs.boots[g.boots])
-                    gearDefs.boots[g.boots].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.belt&&g.belt!=='none'&&gearDefs.belt&&gearDefs.belt[g.belt])
-                    gearDefs.belt[g.belt].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.backpack&&g.backpack!=='pouch'&&g.backpack!=='none'&&gearDefs.backpack&&gearDefs.backpack[g.backpack])
-                    gearDefs.backpack[g.backpack].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.mask&&g.mask!=='none'&&gearDefs.mask&&gearDefs.mask[g.mask])
-                    gearDefs.mask[g.mask].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.leftGuard&&g.leftGuard!=='none'&&gearDefs.leftGuard&&gearDefs.leftGuard[g.leftGuard])
-                    gearDefs.leftGuard[g.leftGuard].mesh(box,cylinder,sphere,star,applyFinalRotation)
-                if(g.rightGuard&&g.rightGuard!=='none'&&gearDefs.rightGuard&&gearDefs.rightGuard[g.rightGuard])
-                    gearDefs.rightGuard[g.rightGuard].mesh(box,cylinder,sphere,star,applyFinalRotation)
-            }catch(e){}
-        })
-        rp.bodyMesh.setBuffers()
-        // Build tool mesh
-        rp.toolMesh.setMeshFromFunction(function(box,a,cylinder,sphere,applyFinalRotation,c,star){
-            try{
-                if(g.tool&&gearDefs.tool&&gearDefs.tool[g.tool])
-                    gearDefs.tool[g.tool].mesh(box,cylinder,sphere,star,applyFinalRotation)
-            }catch(e){}
-        })
-        rp.toolMesh.setBuffers()
-        rp.gearDirty=false
-    }
-
     Multiplayer.onChat(function(msg,color){
-        if(typeof player!=='undefined'&&player.addMessage) player.addMessage(msg,color)
+        if(typeof player!=='undefined'&&player.addMessage){
+            player.addMessage(msg,color)
+        }
+        // Also add to chat box
         let chatDiv=document.getElementById('mpChatMessages')
         if(chatDiv){
             let line=document.createElement('div')
@@ -21446,35 +21415,10 @@ function BeeSwarmSimulator(DATA){
             line.textContent=msg
             chatDiv.appendChild(line)
             chatDiv.scrollTop=chatDiv.scrollHeight
+            // Keep max 50 messages
             while(chatDiv.children.length>50) chatDiv.removeChild(chatDiv.firstChild)
         }
     })
-    // Receive flower updates from other players
-    Multiplayer.onFlower(function(msg){
-        if(flowers[msg.field]&&flowers[msg.field][msg.z]&&flowers[msg.field][msg.z][msg.x]){
-            updateFlower(msg.field,msg.x,msg.z,function(f){ f.height=msg.h },true,false,false,true)
-        }
-    })
-
-    // Receive mob damage from other players
-    Multiplayer.onMobDmg(function(msg){
-        for(let i in objects.mobs){
-            if(objects.mobs[i].id===msg.mobId){
-                objects.mobs[i].health-=msg.damage
-                textRenderer.add((msg.damage|0)+'',[objects.mobs[i].pos[0],objects.mobs[i].pos[1]+Math.random()*2.75+1.5,objects.mobs[i].pos[2]],[255,150,0],0,'',1)
-                break
-            }
-        }
-    })
-
-    // Receive sprout spawns from other players
-    Multiplayer.onSprout(function(msg){
-        if(msg.field&&msg.sproutType){
-            objects.mobs.push(new Sprout(msg.field,msg.sproutType))
-            player.addMessage('A '+MATH.doGrammar(msg.sproutType)+' Sprout was planted!',[100,255,100])
-        }
-    })
-    // === END MULTIPLAYER SETUP ===
 
     let gear=window.playerGear
 
@@ -24225,7 +24169,7 @@ function BeeSwarmSimulator(DATA){
         
         out.hive=[[]]
         out.hivePos=[-1.625+9,1.5,-7.5]
-
+        
         let ht=triggers.hive={
             
             minX:out.hivePos[0]-1,
@@ -33053,21 +32997,16 @@ function BeeSwarmSimulator(DATA){
         index.push(vl+2,vl+1,vl,vl+3,vl+2,vl,vl+6,vl+5,vl+2,vl+7,vl+6,vl+2,vl+1,vl+5,vl+4,vl,vl+1,vl+4,vl+3,vl+7,vl+2,vl+4,vl+3,vl,vl+3,vl+4,vl+7,vl+1,vl+2,vl+5)
     }
 
-    function updateFlower(field,x,z,func,updateHeight,updateGoo,updatePollination,fromNetwork){
-
+    function updateFlower(field,x,z,func,updateHeight,updateGoo,updatePollination){
+        
         func(flowers[field][z][x])
-
+        
         flowers[field][z][x].height=MATH.constrain(flowers[field][z][x].height,0,1)
-
+        
         let i=flowers[field][z][x].id*64
 
         UPDATE_FLOWER_MESH=true
-
-        // Broadcast flower change to other players
-        if(updateHeight&&!fromNetwork&&Multiplayer.isConnected()){
-            Multiplayer.sendFlowerUpdate(field,x,z,flowers[field][z][x].height)
-        }
-
+        
         if(updateHeight){
             
             let newHeight=flowers[field][z][x].y+Math.max(flowers[field][z][x].height*0.5,0.05)
@@ -34203,25 +34142,10 @@ function BeeSwarmSimulator(DATA){
         BEE_FLY=Math.sin(TIME*35)*0.1
         STATS_TICK=frameCount%10===1
 
-        // === MULTIPLAYER: interpolate, send state, sync hive/bees ===
+        // === MULTIPLAYER: interpolate remote players and send local state ===
         if(Multiplayer.isConnected()){
             Multiplayer.interpolate(dt)
-            Multiplayer.sendUpdate(player.body,player.playerAngle,player.currentGear,player.toolRot>0&&player.toolRot<4)
-            // Send hive/bee data every ~5 seconds
-            mpHiveSendTimer+=dt
-            if(mpHiveSendTimer>5){
-                mpHiveSendTimer=0
-                let hiveData=[]
-                for(let y in player.hive)for(let x in player.hive[y]){
-                    hiveData.push({type:player.hive[y][x].type,gifted:player.hive[y][x].gifted})
-                }
-                let beeData=[]
-                for(let i in objects.bees){
-                    let b=objects.bees[i]
-                    beeData.push({type:b.type,gifted:b.gifted,rx:Math.round((b.pos[0]-player.body.position.x)*10)/10,ry:Math.round((b.pos[1]-player.body.position.y)*10)/10,rz:Math.round((b.pos[2]-player.body.position.z)*10)/10})
-                }
-                Multiplayer.sendHiveData(hiveData,beeData)
-            }
+            Multiplayer.sendUpdate(player.body,player.playerAngle,player.currentGear)
             // Update HUD
             let mpHud=document.getElementById('mpHud')
             if(mpHud.style.display==='none') mpHud.style.display='block'
@@ -34508,41 +34432,32 @@ function BeeSwarmSimulator(DATA){
         gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,player.toolMatrix)
         player.toolMesh.render()
 
-        // === MULTIPLAYER: Render remote players with full avatars, tools, bees ===
+        // === MULTIPLAYER: Render remote players ===
         if(Multiplayer.isConnected()){
             let remotePlayers=Multiplayer.getRemotePlayers()
             for(let rid in remotePlayers){
                 let rp=remotePlayers[rid]
-                // Rebuild mesh if gear changed
-                if(rp.gearDirty) buildRemoteAvatar(rp)
-                if(!rp.bodyMesh) continue
                 // Build model matrix from position and yaw
                 let cy=Math.cos(rp.yaw),sy=Math.sin(rp.yaw)
-                remotePlayerMatrix[0]=cy;remotePlayerMatrix[1]=0;remotePlayerMatrix[2]=-sy;remotePlayerMatrix[3]=0
-                remotePlayerMatrix[4]=0;remotePlayerMatrix[5]=1;remotePlayerMatrix[6]=0;remotePlayerMatrix[7]=0
-                remotePlayerMatrix[8]=sy;remotePlayerMatrix[9]=0;remotePlayerMatrix[10]=cy;remotePlayerMatrix[11]=0
-                remotePlayerMatrix[12]=rp.x;remotePlayerMatrix[13]=rp.y;remotePlayerMatrix[14]=rp.z;remotePlayerMatrix[15]=1
-                // Render body
+                remotePlayerMatrix[0]=cy
+                remotePlayerMatrix[1]=0
+                remotePlayerMatrix[2]=-sy
+                remotePlayerMatrix[3]=0
+                remotePlayerMatrix[4]=0
+                remotePlayerMatrix[5]=1
+                remotePlayerMatrix[6]=0
+                remotePlayerMatrix[7]=0
+                remotePlayerMatrix[8]=sy
+                remotePlayerMatrix[9]=0
+                remotePlayerMatrix[10]=cy
+                remotePlayerMatrix[11]=0
+                remotePlayerMatrix[12]=rp.x
+                remotePlayerMatrix[13]=rp.y
+                remotePlayerMatrix[14]=rp.z
+                remotePlayerMatrix[15]=1
                 gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,remotePlayerMatrix)
-                rp.bodyMesh.render()
-                // Render tool with swing animation
-                if(rp.toolMesh){
-                    let toolMat=remotePlayerMatrix.slice()
-                    let swingAngle=Math.max(0,(-Math.abs(rp.toolRot-2)+2)*MATH.QUATER_PI)
-                    if(swingAngle>0){
-                        let cs=Math.cos(swingAngle),ss=Math.sin(swingAngle)
-                        let m4=toolMat[4],m5=toolMat[5],m6=toolMat[6]
-                        toolMat[4]=m4*cs+toolMat[8]*ss
-                        toolMat[5]=m5*cs+toolMat[9]*ss
-                        toolMat[6]=m6*cs+toolMat[10]*ss
-                        toolMat[8]=-m4*ss+toolMat[8]*cs
-                        toolMat[9]=-m5*ss+toolMat[9]*cs
-                        toolMat[10]=-m6*ss+toolMat[10]*cs
-                    }
-                    gl.uniformMatrix4fv(glCache.dynamic_modelMatrix,gl.FALSE,toolMat)
-                    rp.toolMesh.render()
-                }
-                // Name tag above player
+                remotePlayerMesh.render()
+                // Add name tag above remote player
                 textRenderer.addSingle(rp.name,[rp.x,rp.y+2.2,rp.z],[rp.color[0]*255,rp.color[1]*255,rp.color[2]*255],-1.5,false,false,0,0)
             }
         }
@@ -34712,9 +34627,7 @@ function BeeSwarmSimulator(DATA){
         
         gl.bindTexture(gl.TEXTURE_2D,textures.bees)
         player.hiveMesh.render()
-
-        // === END MULTIPLAYER HIVES (removed) ===
-
+        
         player.updateFields()
         
         gl.useProgram(beeGeometryProgram)
